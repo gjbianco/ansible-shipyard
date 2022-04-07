@@ -1,0 +1,54 @@
+---
+- hosts: all
+  gather_facts: no
+
+  vars:
+    username: shipyard
+    packages:
+      - podman
+
+  tasks:
+    - name: system up to date
+      dnf: name=* state=latest update_cache=yes
+
+    - name: packages installed
+      dnf:
+        name: "{{ packages }}"
+        state: present
+
+    - name: system account {{ username }} exists
+      user:
+        name: "{{ username }}"
+        state: present
+        system: yes
+
+    - name: Check if {{ username }} lingers
+      stat: path=/var/lib/systemd/linger/{{ username }}
+      register: linger
+
+    - name: Enable linger for {{ username }}
+      command: "loginctl enable-linger {{ username }}"
+      register: linger_enable
+      when: 
+        - not linger.stat.exists
+        # - systemd_config.enable_linger | default('yes')
+
+    - name: reboot machine
+      when: linger_enable.changed
+      reboot:
+
+- hosts: all
+  gather_facts: no
+  become: yes
+  become_user: "{{ username }}"
+
+  vars:
+    username: shipyard
+
+  tasks:
+    - name: podman socket listening
+      systemd:
+        name: podman.socket
+        enabled: yes
+        scope: user
+        state: started
